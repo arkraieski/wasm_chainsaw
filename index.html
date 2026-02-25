@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Chainsaw | WASM Data Workbench</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+    <!-- Pyodide (Updated to v0.26.4 for better stability) -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+    <!-- WebPerl (Perl WASM) -->
+    <script src="https://webperl.zero-g.net/v0.09-beta/webperl.js"></script>
+    
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; height: 100vh; overflow: hidden; }
+        #editor-container { height: 500px; border: 1px solid #334155; }
+        .tab-active { border-bottom: 2px solid #38bdf8; color: #38bdf8; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        #output-area { font-family: 'Fira Code', monospace; }
+        .loading-shimmer {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <!-- Header -->
+    <header class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900">
+        <div class="flex items-center gap-3">
+            <span class="text-2xl">🪚</span>
+            <h1 class="text-xl font-bold tracking-tight">Data Chainsaw</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg border border-slate-600 transition-all">
+                <span>📁 Upload File</span>
+                <input type="file" id="fileInput" class="hidden">
+            </label>
+            <div id="status" class="text-xs font-mono text-slate-400">Initializing Engines...</div>
+        </div>
+    </header>
+
+    <main class="flex flex-1 overflow-hidden">
+        <!-- Left Panel: Editor & Controls -->
+        <div class="w-1/2 flex flex-col border-r border-slate-700">
+            <!-- Language Selection -->
+            <div class="flex bg-slate-900 border-b border-slate-700">
+                <button onclick="switchLang('python')" id="btn-python" class="px-6 py-3 font-medium transition-all tab-active">Python (Pyodide)</button>
+                <button onclick="switchLang('perl')" id="btn-perl" class="px-6 py-3 font-medium transition-all">Perl (WebPerl)</button>
+            </div>
+
+            <!-- Recipes -->
+            <div class="p-3 bg-slate-800 flex gap-2 overflow-x-auto text-sm">
+                <span class="text-slate-500 py-1">Recipes:</span>
+                <div id="recipes-python" class="flex gap-2">
+                    <button onclick="loadRecipe('py_basic')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">CSV Stats</button>
+                    <button onclick="loadRecipe('py_viz')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">Viz Chart</button>
+                    <button onclick="loadRecipe('py_clean')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">Regex Clean</button>
+                </div>
+                <div id="recipes-perl" class="hidden flex gap-2">
+                    <button onclick="loadRecipe('pl_grep')" class="bg-slate-700 hover:bg-amber-900 px-3 py-1 rounded border border-slate-600">One-Liner Grep</button>
+                    <button onclick="loadRecipe('pl_transform')" class="bg-slate-700 hover:bg-amber-900 px-3 py-1 rounded border border-slate-600">Data Transform</button>
+                </div>
+            </div>
+
+            <div id="editor-container" class="flex-1"></div>
+
+            <div class="p-4 bg-slate-900 border-t border-slate-700 flex justify-between">
+                <button id="runBtn" disabled onclick="runScript()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg disabled:opacity-50 transition-all">
+                    RUN SCRIPT
+                </button>
+                <div id="file-indicator" class="text-xs text-slate-500 italic py-2">No file uploaded</div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Output & Visualization -->
+        <div class="w-1/2 flex flex-col bg-slate-950 overflow-y-auto p-6" id="output-pane">
+            <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Output / Visualization</h2>
+            
+            <div id="viz-container" class="bg-white rounded-lg hidden mb-6 overflow-hidden">
+                <!-- Charts render here -->
+                <img id="py-chart" class="w-full h-auto" />
+            </div>
+
+            <pre id="output-area" class="text-sm text-green-400 whitespace-pre-wrap"></pre>
+        </div>
+    </main>
+
+    <script>
+        let editor;
+        let pyodide;
+        let currentLang = 'python';
+        let uploadedFileData = "";
+
+        // Initial Recipes
+        const recipes = {
+            py_basic: `import pandas as pd\nimport io\n\ntry:\n    # Read the file uploaded to the virtual FS\n    df = pd.read_csv('uploaded_data.csv')\n    print("--- DATASET SUMMARY ---")\n    print(df.describe())\n    print("\\n--- COLUMN INFO ---")\n    print(df.info())\nexcept Exception as e:\n    print(f"Error: {e}. Did you upload a CSV?")`,
+            
+            py_viz: `import pandas as pd\nimport matplotlib.pyplot as plt\nimport io, base64\n\ntry:\n    df = pd.read_csv('uploaded_data.csv')\n    # Basic Plotting\n    plt.figure(figsize=(10, 6))\n    df.iloc[:, 0:2].plot(kind='line')\n    plt.title("Data Chainsaw Visualization")\n    plt.grid(True)\n\n    # Export to base64 for the UI\n    buf = io.BytesIO()\n    plt.savefig(buf, format='png')\n    buf.seek(0)\n    img_str = base64.b64encode(buf.read()).decode('utf-8')\n    print(f"##CHART##{img_str}")\nexcept Exception as e:\n    print(f"Visualization error: {e}")`,
+
+            py_clean: `import pandas as pd\n\ntry:\n    df = pd.read_csv('uploaded_data.csv')\n    # Example: Remove rows with nulls\n    df_clean = df.dropna()\n    print("Cleaned Data (First 5 rows):")\n    print(df_clean.head())\nexcept Exception as e:\n    print(f"Cleaning error: {e}")`,
+
+            pl_grep: `use strict;\nuse warnings;\n\nif (-e 'uploaded_data.csv') {\n    open(my $fh, '<', 'uploaded_data.csv') or die $!;\n    while (my $line = <$fh>) {\n        if ($line =~ /error|warning/i) {\n            print "MATCH: $line";\n        }\n    }\n} else {\n    print "File 'uploaded_data.csv' not found. Please upload a file.";\n}`,
+
+            pl_transform: `if (-e 'uploaded_data.csv') {\n    open(my $fh, '<', 'uploaded_data.csv') or die $!;\n    my $count = 0;\n    while (<$fh>) {\n        $count++;\n        chomp;\n        my @cols = split(/,/, $_);\n        $cols[0] = uc($cols[0]);\n        print join("|", @cols) . "\\n";\n        last if $count > 20;\n    }\n} else {\n    print "File 'uploaded_data.csv' not found.";\n}`
+        };
+
+        // --- Initialization ---
+
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            editor = monaco.editor.create(document.getElementById('editor-container'), {
+                value: recipes.py_basic,
+                language: 'python',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                fontSize: 14,
+                minimap: { enabled: false }
+            });
+            initEngines();
+        });
+
+        async function initEngines() {
+            const status = document.getElementById('status');
+            try {
+                // Init Python (v0.26.4)
+                pyodide = await loadPyodide();
+                await pyodide.loadPackage(['pandas', 'matplotlib']);
+                
+                status.innerText = "Python Ready | Perl Ready";
+                document.getElementById('runBtn').disabled = false;
+                
+                // If a file was uploaded before engines were ready, write it now
+                if (uploadedFileData) {
+                    syncFilesToWASM(uploadedFileData);
+                }
+            } catch (e) {
+                status.innerText = "Engine Init Error";
+                console.error("Pyodide Init Error:", e);
+                document.getElementById('output-area').innerText = "FATAL ERROR: Failed to load Pyodide. Please refresh.";
+            }
+        }
+
+        // --- File Handling ---
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const text = await file.text();
+            uploadedFileData = text;
+            document.getElementById('file-indicator').innerText = `Loaded: ${file.name}`;
+            
+            syncFilesToWASM(text);
+            log(`File "${file.name}" sync'd to virtual filesystems.`);
+        });
+
+        function syncFilesToWASM(text) {
+            // Write to Python FS
+            if (pyodide && pyodide.FS) {
+                pyodide.FS.writeFile('uploaded_data.csv', text);
+            }
+            
+            // Write to Perl FS
+            if (window.Perl && window.Perl.FS) {
+                window.Perl.FS.writeFile('uploaded_data.csv', text);
+            }
+        }
+
+        // --- Execution Logic ---
+
+        async function runScript() {
+            const code = editor.getValue();
+            const output = document.getElementById('output-area');
+            const viz = document.getElementById('viz-container');
+            const chartImg = document.getElementById('py-chart');
+            
+            output.innerText = "Executing...\n";
+            viz.classList.add('hidden');
+
+            try {
+                if (currentLang === 'python') {
+                    // Redirect Python stdout to capture it
+                    pyodide.runPython(`
+                        import sys
+                        import io
+                        sys.stdout = io.StringIO()
+                    `);
+                    
+                    await pyodide.runPythonAsync(code);
+                    
+                    let stdout = pyodide.runPython("sys.stdout.getvalue()");
+                    
+                    if (stdout.includes("##CHART##")) {
+                        const parts = stdout.split("##CHART##");
+                        stdout = parts[0];
+                        chartImg.src = `data:image/png;base64,${parts[1].trim()}`;
+                        viz.classList.remove('hidden');
+                    }
+                    
+                    output.innerText = stdout || "Script executed (no output).";
+                } else {
+                    // Perl Execution
+                    if (!window.Perl) {
+                        output.innerText = "Perl engine not fully loaded yet.";
+                        return;
+                    }
+
+                    // Create output capture for Perl
+                    Perl.FS.writeFile('/tmp/output.txt', '');
+                    
+                    Perl.eval(`
+                        open(my $out_fh, '>', '/tmp/output.txt');
+                        select $out_fh;
+                        ${code}
+                        select STDOUT;
+                        close $out_fh;
+                    `);
+                    
+                    const result = Perl.FS.readFile('/tmp/output.txt', { encoding: 'utf8' });
+                    output.innerText = result || "Script executed.";
+                }
+            } catch (err) {
+                output.innerText = `RUNTIME ERROR:\n${err.message}`;
+            }
+        }
+
+        // --- UI Helpers ---
+
+        function switchLang(lang) {
+            currentLang = lang;
+            document.getElementById('btn-python').className = lang === 'python' ? 'px-6 py-3 font-medium transition-all tab-active' : 'px-6 py-3 font-medium transition-all';
+            document.getElementById('btn-perl').className = lang === 'perl' ? 'px-6 py-3 font-medium transition-all tab-active' : 'px-6 py-3 font-medium transition-all';
+            
+            document.getElementById('recipes-python').classList.toggle('hidden', lang !== 'python');
+            document.getElementById('recipes-perl').classList.toggle('hidden', lang !== 'perl');
+
+            const model = editor.getModel();
+            monaco.editor.setModelLanguage(model, lang);
+            
+            if (lang === 'python') {
+                editor.setValue(recipes.py_basic);
+            } else {
+                editor.setValue(recipes.pl_grep);
+            }
+        }
+
+        function loadRecipe(key) {
+            if (recipes[key]) {
+                editor.setValue(recipes[key]);
+            }
+        }
+
+        function log(msg) {
+            const output = document.getElementById('output-area');
+            output.innerText += `\n[SYSTEM] ${msg}`;
+        }
+
+    </script>
+</body>
+</html>
