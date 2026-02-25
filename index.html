@@ -21,12 +21,33 @@
         ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         #output-area { font-family: 'Fira Code', monospace; }
-        .loading-shimmer {
-            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
+        .footer-link { color: #38bdf8; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
+        .footer-link:hover { border-bottom: 1px solid #38bdf8; }
+
+        /* Tooltip Styles */
+        .tooltip-container { position: relative; display: inline-block; }
+        .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #1e293b;
+            color: #fff;
+            text-align: center;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 10;
+            top: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 10px;
+            line-height: 1.4;
+            pointer-events: none;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
     </style>
 </head>
 <body class="flex flex-col">
@@ -35,10 +56,19 @@
     <header class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900">
         <div class="flex items-center gap-3">
             <span class="text-2xl">🪚</span>
-            <h1 class="text-xl font-bold tracking-tight">Data Chainsaw</h1>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white">Data Chainsaw</h1>
+            </div>
         </div>
         <div class="flex items-center gap-4">
-            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg border border-slate-600 transition-all">
+            <div class="tooltip-container">
+                <button id="downloadBtn" onclick="downloadData()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-600 transition-all hidden flex items-center gap-2">
+                    📥 Download CSV
+                </button>
+                <span class="tooltip-text">Downloads the current state of 'uploaded_data.csv' from the WASM virtual filesystem. Use this to save your cleaned or transformed data.</span>
+            </div>
+            
+            <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg transition-all text-sm font-semibold">
                 <span>📁 Upload File</span>
                 <input type="file" id="fileInput" class="hidden">
             </label>
@@ -72,8 +102,8 @@
             <div id="editor-container" class="flex-1"></div>
 
             <div class="p-4 bg-slate-900 border-t border-slate-700 flex justify-between">
-                <button id="runBtn" disabled onclick="runScript()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg disabled:opacity-50 transition-all">
-                    RUN SCRIPT
+                <button id="runBtn" disabled onclick="runScript()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg disabled:opacity-50 transition-all uppercase tracking-wider">
+                    Run Workbench
                 </button>
                 <div id="file-indicator" class="text-xs text-slate-500 italic py-2">No file uploaded</div>
             </div>
@@ -83,14 +113,19 @@
         <div class="w-1/2 flex flex-col bg-slate-950 overflow-y-auto p-6" id="output-pane">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Output / Visualization</h2>
             
-            <div id="viz-container" class="bg-white rounded-lg hidden mb-6 overflow-hidden">
+            <div id="viz-container" class="bg-white rounded-lg hidden mb-6 overflow-hidden shadow-2xl">
                 <!-- Charts render here -->
                 <img id="py-chart" class="w-full h-auto" />
             </div>
 
-            <pre id="output-area" class="text-sm text-green-400 whitespace-pre-wrap"></pre>
+            <pre id="output-area" class="text-sm text-green-400 whitespace-pre-wrap font-mono"></pre>
         </div>
     </main>
+
+    <!-- Footer -->
+    <footer class="p-2 bg-slate-900 border-t border-slate-800 text-center text-[11px] text-slate-500">
+        Data Chainsaw &copy; 2026 | Built by <a href="https://kraieski.dev" target="_blank" class="footer-link">kraieski.dev</a> | Powered by WASM
+    </footer>
 
     <script>
         let editor;
@@ -100,15 +135,15 @@
 
         // Initial Recipes
         const recipes = {
-            py_basic: `import pandas as pd\nimport io\n\ntry:\n    # Read the file uploaded to the virtual FS\n    df = pd.read_csv('uploaded_data.csv')\n    print("--- DATASET SUMMARY ---")\n    print(df.describe())\n    print("\\n--- COLUMN INFO ---")\n    print(df.info())\nexcept Exception as e:\n    print(f"Error: {e}. Did you upload a CSV?")`,
+            py_basic: `# Import necessary libraries\nimport pandas as pd\nimport io\n\ntry:\n    # Load the file stored in the WASM virtual filesystem\n    df = pd.read_csv('uploaded_data.csv')\n    \n    # Generate and print statistical summary\n    print("--- DATASET SUMMARY ---")\n    print(df.describe())\n    \n    print("\\n--- COLUMN DATA TYPES ---")\n    print(df.dtypes)\nexcept Exception as e:\n    print(f"Error: {e}. Please ensure a CSV file is uploaded.")`,
             
-            py_viz: `import pandas as pd\nimport matplotlib.pyplot as plt\nimport io, base64\n\ntry:\n    df = pd.read_csv('uploaded_data.csv')\n    # Basic Plotting\n    plt.figure(figsize=(10, 6))\n    df.iloc[:, 0:2].plot(kind='line')\n    plt.title("Data Chainsaw Visualization")\n    plt.grid(True)\n\n    # Export to base64 for the UI\n    buf = io.BytesIO()\n    plt.savefig(buf, format='png')\n    buf.seek(0)\n    img_str = base64.b64encode(buf.read()).decode('utf-8')\n    print(f"##CHART##{img_str}")\nexcept Exception as e:\n    print(f"Visualization error: {e}")`,
+            py_viz: `# Import viz and data libraries\nimport pandas as pd\nimport matplotlib.pyplot as plt\nimport io, base64\n\ntry:\n    # Read data from the virtual 'uploaded_data.csv'\n    df = pd.read_csv('uploaded_data.csv')\n\n    # Create a plot using the first two numeric columns\n    plt.figure(figsize=(10, 6))\n    df.select_dtypes(include=['number']).iloc[:, 0:2].plot(kind='line')\n    \n    plt.title("WASM Data Chainsaw Output")\n    plt.xlabel("Index")\n    plt.ylabel("Values")\n    plt.grid(True, linestyle='--', alpha=0.7)\n\n    # Convert plot to Base64 to send it to the UI container\n    buf = io.BytesIO()\n    plt.savefig(buf, format='png', dpi=100)\n    buf.seek(0)\n    img_str = base64.b64encode(buf.read()).decode('utf-8')\n    \n    # Send signal to the JS layer to render the chart\n    print(f"##CHART##{img_str}")\n    print("Visualization generated successfully.")\nexcept Exception as e:\n    print(f"Visualization error: {e}")`,
 
-            py_clean: `import pandas as pd\n\ntry:\n    df = pd.read_csv('uploaded_data.csv')\n    # Example: Remove rows with nulls\n    df_clean = df.dropna()\n    print("Cleaned Data (First 5 rows):")\n    print(df_clean.head())\nexcept Exception as e:\n    print(f"Cleaning error: {e}")`,
+            py_clean: `# Clean and export data back to the filesystem\nimport pandas as pd\n\ntry:\n    df = pd.read_csv('uploaded_data.csv')\n    \n    # 1. Drop rows that contain any missing values\n    df_clean = df.dropna()\n    \n    # 2. Reset the index for the new dataset\n    df_clean = df_clean.reset_index(drop=True)\n    \n    # 3. Save the cleaned data back to the virtual FS for download\n    df_clean.to_csv('uploaded_data.csv', index=False)\n    \n    print("Data cleaned! Rows remaining:", len(df_clean))\n    print("\\nPreview of cleaned data:")\n    print(df_clean.head())\nexcept Exception as e:\n    print(f"Cleaning error: {e}")`,
 
-            pl_grep: `use strict;\nuse warnings;\n\nif (-e 'uploaded_data.csv') {\n    open(my $fh, '<', 'uploaded_data.csv') or die $!;\n    while (my $line = <$fh>) {\n        if ($line =~ /error|warning/i) {\n            print "MATCH: $line";\n        }\n    }\n} else {\n    print "File 'uploaded_data.csv' not found. Please upload a file.";\n}`,
+            pl_grep: `# Perl Regex Power: Find specific patterns\nuse strict;\nuse warnings;\n\nmy $file = 'uploaded_data.csv';\n\nif (-e $file) {\n    open(my $fh, '<', $file) or die "Could not open $file: $!";\n    print "--- SEARCH RESULTS ---\\n";\n    while (my $line = <$fh>) {\n        # Change 'error' to whatever keyword you are looking for\n        if ($line =~ /error|warning|fail/i) {\n            print "L$.: $line";\n        }\n    }\n    close($fh);\n} else {\n    print "Please upload a CSV file first.";\n}`,
 
-            pl_transform: `if (-e 'uploaded_data.csv') {\n    open(my $fh, '<', 'uploaded_data.csv') or die $!;\n    my $count = 0;\n    while (<$fh>) {\n        $count++;\n        chomp;\n        my @cols = split(/,/, $_);\n        $cols[0] = uc($cols[0]);\n        print join("|", @cols) . "\\n";\n        last if $count > 20;\n    }\n} else {\n    print "File 'uploaded_data.csv' not found.";\n}`
+            pl_transform: `# Perl Data Transformation: Manipulate CSV columns\nuse strict;\nuse warnings;\n\nmy $file = 'uploaded_data.csv';\n\nif (-e $file) {\n    open(my $in, '<', $file) or die $!;\n    open(my $out, '>', 'transformed.csv') or die $!;\n    \n    while (<$in>) {\n        chomp;\n        my @fields = split(/,/, $_);\n        \n        # EXAMPLE: Uppercase the first column and add a timestamp column\n        $fields[0] = uc($fields[0]);\n        push @fields, time();\n        \n        my $new_line = join(",", @fields);\n        print $out "$new_line\\n";\n        print "$new_line\\n" if $. <= 10; # Print first 10 rows to UI\n    }\n    \n    close($in);\n    close($out);\n    \n    # Overwrite the main file so it can be downloaded\n    rename('transformed.csv', $file);\n    print "--- SUCCESS ---\\nProcessed $. lines. Data overwritten in virtual FS.";\n} else {\n    print "No file found.";\n}`
         };
 
         // --- Initialization ---
@@ -129,14 +164,12 @@
         async function initEngines() {
             const status = document.getElementById('status');
             try {
-                // Init Python (v0.26.4)
                 pyodide = await loadPyodide();
                 await pyodide.loadPackage(['pandas', 'matplotlib']);
                 
                 status.innerText = "Python Ready | Perl Ready";
                 document.getElementById('runBtn').disabled = false;
                 
-                // If a file was uploaded before engines were ready, write it now
                 if (uploadedFileData) {
                     syncFilesToWASM(uploadedFileData);
                 }
@@ -156,20 +189,41 @@
             const text = await file.text();
             uploadedFileData = text;
             document.getElementById('file-indicator').innerText = `Loaded: ${file.name}`;
+            document.getElementById('downloadBtn').classList.remove('hidden');
             
             syncFilesToWASM(text);
             log(`File "${file.name}" sync'd to virtual filesystems.`);
         });
 
         function syncFilesToWASM(text) {
-            // Write to Python FS
             if (pyodide && pyodide.FS) {
                 pyodide.FS.writeFile('uploaded_data.csv', text);
             }
-            
-            // Write to Perl FS
             if (window.Perl && window.Perl.FS) {
                 window.Perl.FS.writeFile('uploaded_data.csv', text);
+            }
+        }
+
+        async function downloadData() {
+            let data = "";
+            try {
+                if (currentLang === 'python') {
+                    data = pyodide.FS.readFile('uploaded_data.csv', { encoding: 'utf8' });
+                } else {
+                    data = Perl.FS.readFile('uploaded_data.csv', { encoding: 'utf8' });
+                }
+                
+                const blob = new Blob([data], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'chainsaw_processed_data.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (err) {
+                alert("Error reading file from virtual filesystem: " + err.message);
             }
         }
 
@@ -186,7 +240,6 @@
 
             try {
                 if (currentLang === 'python') {
-                    // Redirect Python stdout to capture it
                     pyodide.runPython(`
                         import sys
                         import io
@@ -206,13 +259,11 @@
                     
                     output.innerText = stdout || "Script executed (no output).";
                 } else {
-                    // Perl Execution
                     if (!window.Perl) {
                         output.innerText = "Perl engine not fully loaded yet.";
                         return;
                     }
 
-                    // Create output capture for Perl
                     Perl.FS.writeFile('/tmp/output.txt', '');
                     
                     Perl.eval(`
