@@ -15,7 +15,7 @@
     
     <style>
         body { background-color: #0f172a; color: #e2e8f0; height: 100vh; overflow: hidden; }
-        #editor-container { height: 500px; border: 1px solid #334155; }
+        #editor-container { flex: 1; border: 1px solid #334155; min-height: 300px; }
         .tab-active { border-bottom: 2px solid #38bdf8; color: #38bdf8; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
@@ -48,12 +48,17 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
         .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="flex flex-col">
 
     <!-- Header -->
-    <header class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900">
+    <header class="p-4 border-b border-slate-700 flex flex-wrap justify-between items-center bg-slate-900 gap-3">
         <div class="flex items-center gap-3">
             <span class="text-2xl">🪚</span>
             <div>
@@ -61,6 +66,11 @@
             </div>
         </div>
         <div class="flex items-center gap-4">
+            <a href="https://github.com/arkraieski/wasm_chainsaw" target="_blank" class="text-slate-400 hover:text-white transition-colors flex items-center gap-2 text-xs">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                <span class="hidden sm:inline">Source</span>
+            </a>
+
             <div class="tooltip-container">
                 <button id="downloadBtn" onclick="downloadData()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-600 transition-all hidden flex items-center gap-2">
                     📥 Download CSV
@@ -72,58 +82,60 @@
                 <span>📁 Upload File</span>
                 <input type="file" id="fileInput" class="hidden">
             </label>
-            <div id="status" class="text-xs font-mono text-slate-400">Initializing Engines...</div>
+            <div id="status" class="hidden lg:block text-xs font-mono text-slate-400">Initializing Engines...</div>
         </div>
     </header>
 
-    <main class="flex flex-1 overflow-hidden">
-        <!-- Left Panel: Editor & Controls -->
-        <div class="w-1/2 flex flex-col border-r border-slate-700">
+    <!-- Main Content: Mobile Stack vs Desktop Side-by-Side -->
+    <main class="flex flex-1 flex-col md:flex-row overflow-hidden">
+        
+        <!-- Left Panel: Editor (Takes 50% height on mobile, 50% width on desktop) -->
+        <div class="h-1/2 md:h-auto md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 overflow-hidden">
             <!-- Language Selection -->
-            <div class="flex bg-slate-900 border-b border-slate-700">
-                <button onclick="switchLang('python')" id="btn-python" class="px-6 py-3 font-medium transition-all tab-active">Python (Pyodide)</button>
-                <button onclick="switchLang('perl')" id="btn-perl" class="px-6 py-3 font-medium transition-all">Perl (WebPerl)</button>
+            <div class="flex bg-slate-900 border-b border-slate-700 text-sm">
+                <button onclick="switchLang('python')" id="btn-python" class="px-4 py-2 md:px-6 md:py-3 font-medium transition-all tab-active text-xs md:text-sm">Python</button>
+                <button onclick="switchLang('perl')" id="btn-perl" class="px-4 py-2 md:px-6 md:py-3 font-medium transition-all text-xs md:text-sm">Perl</button>
             </div>
 
             <!-- Recipes -->
-            <div class="p-3 bg-slate-800 flex gap-2 overflow-x-auto text-sm">
-                <span class="text-slate-500 py-1">Recipes:</span>
+            <div class="p-2 bg-slate-800 flex gap-2 overflow-x-auto text-[10px] md:text-xs no-scrollbar">
+                <span class="text-slate-500 py-1 flex-shrink-0">Recipes:</span>
                 <div id="recipes-python" class="flex gap-2">
-                    <button onclick="loadRecipe('py_basic')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">CSV Stats</button>
-                    <button onclick="loadRecipe('py_viz')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">Viz Chart</button>
-                    <button onclick="loadRecipe('py_clean')" class="bg-slate-700 hover:bg-blue-900 px-3 py-1 rounded border border-slate-600">Regex Clean</button>
+                    <button onclick="loadRecipe('py_basic')" class="bg-slate-700 hover:bg-blue-900 px-2 py-1 rounded border border-slate-600 flex-shrink-0">CSV Stats</button>
+                    <button onclick="loadRecipe('py_viz')" class="bg-slate-700 hover:bg-blue-900 px-2 py-1 rounded border border-slate-600 flex-shrink-0">Viz Chart</button>
+                    <button onclick="loadRecipe('py_clean')" class="bg-slate-700 hover:bg-blue-900 px-2 py-1 rounded border border-slate-600 flex-shrink-0">Regex Clean</button>
                 </div>
                 <div id="recipes-perl" class="hidden flex gap-2">
-                    <button onclick="loadRecipe('pl_grep')" class="bg-slate-700 hover:bg-amber-900 px-3 py-1 rounded border border-slate-600">One-Liner Grep</button>
-                    <button onclick="loadRecipe('pl_transform')" class="bg-slate-700 hover:bg-amber-900 px-3 py-1 rounded border border-slate-600">Data Transform</button>
+                    <button onclick="loadRecipe('pl_grep')" class="bg-slate-700 hover:bg-amber-900 px-2 py-1 rounded border border-slate-600 flex-shrink-0">Grep</button>
+                    <button onclick="loadRecipe('pl_transform')" class="bg-slate-700 hover:bg-amber-900 px-2 py-1 rounded border border-slate-600 flex-shrink-0">Transform</button>
                 </div>
             </div>
 
-            <div id="editor-container" class="flex-1"></div>
+            <div id="editor-container"></div>
 
-            <div class="p-4 bg-slate-900 border-t border-slate-700 flex justify-between">
-                <button id="runBtn" disabled onclick="runScript()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg disabled:opacity-50 transition-all uppercase tracking-wider">
+            <div class="p-3 bg-slate-900 border-t border-slate-700 flex justify-between items-center">
+                <button id="runBtn" disabled onclick="runScript()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg disabled:opacity-50 transition-all text-xs md:text-sm uppercase tracking-wider">
                     Run Workbench
                 </button>
-                <div id="file-indicator" class="text-xs text-slate-500 italic py-2">No file uploaded</div>
+                <div id="file-indicator" class="text-[10px] md:text-xs text-slate-500 italic truncate ml-2">No file uploaded</div>
             </div>
         </div>
 
-        <!-- Right Panel: Output & Visualization -->
-        <div class="w-1/2 flex flex-col bg-slate-950 overflow-y-auto p-6" id="output-pane">
-            <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Output / Visualization</h2>
+        <!-- Right Panel: Output (Takes 50% height on mobile, 50% width on desktop) -->
+        <div class="h-1/2 md:h-auto md:w-1/2 flex flex-col bg-slate-950 overflow-y-auto p-4 md:p-6" id="output-pane">
+            <h2 class="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Output / Visualization</h2>
             
-            <div id="viz-container" class="bg-white rounded-lg hidden mb-6 overflow-hidden shadow-2xl">
+            <div id="viz-container" class="bg-white rounded-lg hidden mb-4 overflow-hidden shadow-2xl">
                 <!-- Charts render here -->
                 <img id="py-chart" class="w-full h-auto" />
             </div>
 
-            <pre id="output-area" class="text-sm text-green-400 whitespace-pre-wrap font-mono"></pre>
+            <pre id="output-area" class="text-xs md:text-sm text-green-400 whitespace-pre-wrap font-mono"></pre>
         </div>
     </main>
 
     <!-- Footer -->
-    <footer class="p-2 bg-slate-900 border-t border-slate-800 text-center text-[11px] text-slate-500">
+    <footer class="p-2 bg-slate-900 border-t border-slate-800 text-center text-[10px] md:text-[11px] text-slate-500">
         Data Chainsaw &copy; 2026 | Built by <a href="https://kraieski.dev" target="_blank" class="footer-link">kraieski.dev</a> | Powered by WASM
     </footer>
 
@@ -286,8 +298,8 @@
 
         function switchLang(lang) {
             currentLang = lang;
-            document.getElementById('btn-python').className = lang === 'python' ? 'px-6 py-3 font-medium transition-all tab-active' : 'px-6 py-3 font-medium transition-all';
-            document.getElementById('btn-perl').className = lang === 'perl' ? 'px-6 py-3 font-medium transition-all tab-active' : 'px-6 py-3 font-medium transition-all';
+            document.getElementById('btn-python').className = lang === 'python' ? 'px-4 py-2 md:px-6 md:py-3 font-medium transition-all tab-active' : 'px-4 py-2 md:px-6 md:py-3 font-medium transition-all';
+            document.getElementById('btn-perl').className = lang === 'perl' ? 'px-4 py-2 md:px-6 md:py-3 font-medium transition-all tab-active' : 'px-4 py-2 md:px-6 md:py-3 font-medium transition-all';
             
             document.getElementById('recipes-python').classList.toggle('hidden', lang !== 'python');
             document.getElementById('recipes-perl').classList.toggle('hidden', lang !== 'perl');
